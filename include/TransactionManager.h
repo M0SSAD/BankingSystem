@@ -8,6 +8,8 @@
 #include "types.h"
 #include <memory>
 #include <vector>
+#include <atomic>
+
 
 class TransactionManager {
 private:
