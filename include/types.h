@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <chrono>
 
+const int64_t MINMUM_PENDING_DEPOSIT = 500;
+
 enum TransactionStatus {
     SUCCESS,
     FAILED_INSUFFEICIENT_FUNDS,

@@ -20,7 +20,6 @@ private:
     std::unordered_multimap<uint64_t, uint64_t> index_by_src; // To store the transaction Id based on the srcId.
     std::unordered_multimap<uint64_t, uint64_t> index_by_dest; // to store the transaction Id based on the destId.
     std::map<std::chrono::system_clock::time_point, uint64_t> index_by_time; // sorts the transactions based on their time stamp.
-    std::unordered_map<uint64_t, std::unique_ptr<std::mutex>> account_locks; // Stores the locks 
     std::atomic<uint64_t> next_tx_id;
 
     void writeRecord(const TransactionRecord& record);
