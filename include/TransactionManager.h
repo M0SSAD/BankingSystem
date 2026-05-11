@@ -23,7 +23,6 @@ private:
     std::atomic<uint64_t> next_tx_id;
 
     void writeRecord(const TransactionRecord& record);
-    void acquireLocks(uint64_t id1, uint64_t id2);
 
 public:
     explicit TransactionManager(std::unordered_map<uint64_t, std::unique_ptr<Account>>& accounts)
