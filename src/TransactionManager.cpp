@@ -1,350 +1,375 @@
 #include "TransactionManager.h"
 
+TransactionStatus TransactionManager::executeDeposit(uint64_t account_id,
+                                                     int64_t amount) {
 
-TransactionStatus TransactionManager::executeDeposit(uint64_t account_id, int64_t amount){
+	auto acc_it = accounts_ref.find(account_id);
+	if (acc_it == accounts_ref.end())
+		return TransactionStatus::FAILED_ACCOUNT_NOT_FOUND;
 
-    auto acc_it = accounts_ref.find(account_id);
-    if(acc_it == accounts_ref.end())
-        return TransactionStatus::FAILED_ACCOUNT_NOT_FOUND;
- 
-    //make friend class TransactionManager in Account class to access mtx --private data member
-    //lock mutex First 
-    std::scoped_lock lock(acc_it->second->mtx); 
-    if (acc_it->second->getState() == AccountState::CLOSED) {
-         // Constructing the record directly
-         TransactionRecord failed_invalid_record {
-            std::chrono::system_clock::now(),                      // timestamp
-            next_tx_id.fetch_add(1, std::memory_order_relaxed),    // transactionId
-            0,                                                     // src_id
-            account_id,                                            // dest_id
-            amount,                                                // amount
-            TransactionStatus::FAILED_INVALID_STATE                // status
-        };
-            
-        writeRecord(failed_invalid_record);
-        return TransactionStatus::FAILED_INVALID_STATE;
-    }
+	// make friend class TransactionManager in Account class to access mtx
+	// --private data member lock mutex First
+	std::scoped_lock lock(acc_it->second->mtx);
+	if (acc_it->second->getState() == AccountState::CLOSED) {
+		// Constructing the record directly
+		TransactionRecord failed_invalid_record{
+		    std::chrono::system_clock::now(),                   // timestamp
+		    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+		    0,                                                  // src_id
+		    account_id,                                         // dest_id
+		    amount,                                             // amount
+		    TransactionStatus::FAILED_INVALID_STATE             // status
+		};
 
-    if(acc_it->second->getState() == AccountState::PENDING && amount < MINIMUM_PENDING_DEPOSIT){    
-         TransactionRecord failed_invalid_record {
-            std::chrono::system_clock::now(),                      // timestamp
-            next_tx_id.fetch_add(1, std::memory_order_relaxed),    // transactionId
-            0,                                                     // src_id
-            account_id,                                            // dest_id
-            amount,                                                // amount
-            TransactionStatus::FAILED_INVALID_STATE                // status
-        };
-        writeRecord(failed_invalid_record);  
-        return TransactionStatus::FAILED_INVALID_STATE;
-    }
+		writeRecord(failed_invalid_record);
+		return TransactionStatus::FAILED_INVALID_STATE;
+	}
 
-    bool status = acc_it->second->credit(amount);
+	if (acc_it->second->getState() == AccountState::PENDING &&
+	    amount < MINIMUM_PENDING_DEPOSIT) {
+		TransactionRecord failed_invalid_record{
+		    std::chrono::system_clock::now(),                   // timestamp
+		    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+		    0,                                                  // src_id
+		    account_id,                                         // dest_id
+		    amount,                                             // amount
+		    TransactionStatus::FAILED_INVALID_STATE             // status
+		};
+		writeRecord(failed_invalid_record);
+		return TransactionStatus::FAILED_INVALID_STATE;
+	}
 
-    if(!status) return TransactionStatus::FAILED_INVALID_STATE;
+	bool status = acc_it->second->credit(amount);
 
+	if (!status)
+		return TransactionStatus::FAILED_INVALID_STATE;
 
-    if(acc_it->second->getState() == AccountState::PENDING)
-        acc_it->second->state = AccountState::ACTIVE;
+	if (acc_it->second->getState() == AccountState::PENDING)
+		acc_it->second->state = AccountState::ACTIVE;
 
-    TransactionRecord successful_record {
-        std::chrono::system_clock::now(), // timestamp
-        next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
-        0, // src_id
-        account_id, // dest_id
-        amount, // amount
-        TransactionStatus::SUCCESS, // status
-        }; 
-    writeRecord(successful_record);  
-    return TransactionStatus::SUCCESS;
+	TransactionRecord successful_record{
+	    std::chrono::system_clock::now(),                   // timestamp
+	    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+	    0,                                                  // src_id
+	    account_id,                                         // dest_id
+	    amount,                                             // amount
+	    TransactionStatus::SUCCESS,                         // status
+	};
+	writeRecord(successful_record);
+	return TransactionStatus::SUCCESS;
 }
 
-TransactionStatus TransactionManager::executeWithdraw(uint64_t account_id, int64_t amount){
+TransactionStatus TransactionManager::executeWithdraw(uint64_t account_id,
+                                                      int64_t amount) {
 
-    auto acc_it = accounts_ref.find(account_id);
-    if(acc_it == accounts_ref.end())
-        return TransactionStatus::FAILED_ACCOUNT_NOT_FOUND;
+	auto acc_it = accounts_ref.find(account_id);
+	if (acc_it == accounts_ref.end())
+		return TransactionStatus::FAILED_ACCOUNT_NOT_FOUND;
 
+	std::scoped_lock lock(acc_it->second->mtx); // lock mutex
+	if (acc_it->second->getState() == AccountState::CLOSED ||
+	    acc_it->second->getState() == AccountState::PENDING) {
+		TransactionRecord failed_invalid_record{
+		    std::chrono::system_clock::now(),                   // timestamp
+		    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+		    0,                                                  // src_id
+		    account_id,                                         // dest_id
+		    amount,                                             // amount
+		    TransactionStatus::FAILED_INVALID_STATE             // status
+		};
 
-    std::scoped_lock lock(acc_it->second->mtx); //lock mutex
-    if (acc_it->second->getState() == AccountState::CLOSED  || acc_it->second->getState() == AccountState::PENDING) {
-         TransactionRecord failed_invalid_record {
-            std::chrono::system_clock::now(),                      // timestamp
-            next_tx_id.fetch_add(1, std::memory_order_relaxed),    // transactionId
-            0,                                                     // src_id
-            account_id,                                            // dest_id
-            amount,                                                // amount
-            TransactionStatus::FAILED_INVALID_STATE                // status
-        };
-        
-        writeRecord(failed_invalid_record);
-        return TransactionStatus::FAILED_INVALID_STATE;
-    }
-    if (acc_it->second->getState() == AccountState::FROZEN) {
-        // Constructing the record directly
-        TransactionRecord failed_frozen_record {
-            std::chrono::system_clock::now(),                      // timestamp
-            next_tx_id.fetch_add(1, std::memory_order_relaxed),    // transactionId
-            0,                                                     // src_id
-            account_id,                                            // dest_id
-            amount,                                                // amount
-            TransactionStatus::FAILED_ACCOUNT_FROZEN         // status
-        };
-        
-        writeRecord(failed_frozen_record);
-        return TransactionStatus::FAILED_ACCOUNT_FROZEN;
-    }
-    if(acc_it->second->getBalance() < amount){
-        // Constructing the record directly
-         TransactionRecord failed_invalid_record {
-            std::chrono::system_clock::now(),                      // timestamp
-            next_tx_id.fetch_add(1, std::memory_order_relaxed),    // transactionId
-            0,                                                     // src_id
-            account_id,                                            // dest_id
-            amount,                                                // amount
-            TransactionStatus::FAILED_INVALID_STATE                // status
-        };
-        
-        writeRecord(failed_invalid_record);
-        return TransactionStatus::FAILED_INSUFFICIENT_FUNDS;
-    }
+		writeRecord(failed_invalid_record);
+		return TransactionStatus::FAILED_INVALID_STATE;
+	}
+	if (acc_it->second->getState() == AccountState::FROZEN) {
+		// Constructing the record directly
+		TransactionRecord failed_frozen_record{
+		    std::chrono::system_clock::now(),                   // timestamp
+		    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+		    0,                                                  // src_id
+		    account_id,                                         // dest_id
+		    amount,                                             // amount
+		    TransactionStatus::FAILED_ACCOUNT_FROZEN            // status
+		};
 
-    bool status = acc_it->second->debit(amount);
-    
-    if(!status) return TransactionStatus::FAILED_INVALID_STATE;
-    TransactionRecord successful_record {
-        std::chrono::system_clock::now(), // timestamp
-        next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
-        0, // src_id
-        account_id, // dest_id
-        amount, // amount
-        TransactionStatus::SUCCESS, // status
-        }; 
+		writeRecord(failed_frozen_record);
+		return TransactionStatus::FAILED_ACCOUNT_FROZEN;
+	}
+	if (acc_it->second->getBalance() < amount) {
+		// Constructing the record directly
+		TransactionRecord failed_invalid_record{
+		    std::chrono::system_clock::now(),                   // timestamp
+		    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+		    0,                                                  // src_id
+		    account_id,                                         // dest_id
+		    amount,                                             // amount
+		    TransactionStatus::FAILED_INVALID_STATE             // status
+		};
 
-    writeRecord(successful_record);  
-    return TransactionStatus::SUCCESS;
+		writeRecord(failed_invalid_record);
+		return TransactionStatus::FAILED_INSUFFICIENT_FUNDS;
+	}
+
+	bool status = acc_it->second->debit(amount);
+
+	if (!status)
+		return TransactionStatus::FAILED_INVALID_STATE;
+	TransactionRecord successful_record{
+	    std::chrono::system_clock::now(),                   // timestamp
+	    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+	    0,                                                  // src_id
+	    account_id,                                         // dest_id
+	    amount,                                             // amount
+	    TransactionStatus::SUCCESS,                         // status
+	};
+
+	writeRecord(successful_record);
+	return TransactionStatus::SUCCESS;
 }
 
+TransactionStatus TransactionManager::executeTransfer(uint64_t src_id,
+                                                      uint64_t dest_id,
+                                                      int64_t amount) {
 
+	if (src_id == dest_id) {
+		return TransactionStatus::FAILED_INVALID_STATE;
+	}
 
+	// we need to check that those 2 accounts are exist
+	auto src_it =
+	    accounts_ref.find(src_id); // is this  source account actually exist
+	auto dest_it = accounts_ref.find(
+	    dest_id); // check this destination account actually exist
 
-TransactionStatus TransactionManager::executeTransfer(uint64_t src_id, uint64_t dest_id, int64_t amount){
+	// if one of them doesn't exist in the system
+	if (src_it == accounts_ref.end() || dest_it == accounts_ref.end()) {
+		TransactionRecord failed_record{
+		    // Constructing the record directly
+		    std::chrono::system_clock::now(),                   // timestamp
+		    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+		    src_id,                                             // src_id
+		    dest_id,                                            // dest_id
+		    amount,                                             // amount
+		    TransactionStatus::FAILED_INVALID_STATE             // status};
+		};
+		writeRecord(failed_record);
+		return TransactionStatus::FAILED_INVALID_STATE;
+	}
 
-    if(src_id==dest_id){
-        return TransactionStatus::FAILED_INVALID_STATE;
-    }
+	// create 2 locks to avoid deadlock if the 2 accounts try sending money for
+	// each other at the same time 2 accounts should be blocked the one that get
+	// the lock the one with ascending order ID
+	std::scoped_lock lock(
+	    src_it->second->mtx,
+	    dest_it->second->mtx); // the scoped lock ask for the 2 keys for source
+	                           // and destination
+	// it uses deadlock avoidance alogirthm to grab them safely
+	// if there is thread using one of the accounts we will wait
+	// this ensure that in the execute transaction we can safely take 2 accounts
+	// perform operation and release them
 
-// we need to check that those 2 accounts are exist
-auto src_it=accounts_ref.find(src_id);//is this  source account actually exist
-auto dest_it=accounts_ref.find(dest_id);//check this destination account actually exist
+	// if the source account not active or the destination is closed
 
-//if one of them doesn't exist in the system 
- if(src_it==accounts_ref.end() || dest_it==accounts_ref.end()){
-    TransactionRecord failed_record{
-            // Constructing the record directly
-            std::chrono::system_clock::now(),                      // timestamp
-            next_tx_id.fetch_add(1, std::memory_order_relaxed),    // transactionId
-            src_id,                                                     // src_id
-            dest_id,                                            // dest_id
-            amount,                                                // amount
-            TransactionStatus::FAILED_INVALID_STATE                // status};
-};
-        writeRecord(failed_record);
-              return TransactionStatus::FAILED_INVALID_STATE;}
+	if (src_it->second->getState() != AccountState::ACTIVE ||
+	    dest_it->second->getState() == AccountState::CLOSED) {
+		// create transaction status that 's invalid
+		TransactionRecord failed_record{
+		    // Constructing the record directly
+		    std::chrono::system_clock::now(),                   // timestamp
+		    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+		    src_id,                                             // src_id
+		    dest_id,                                            // dest_id
+		    amount,                                             // amount
+		    TransactionStatus::FAILED_INVALID_STATE             // status};
+		};
+		writeRecord(failed_record);
+		return TransactionStatus::FAILED_INVALID_STATE;
+	}
 
-//create 2 locks to avoid deadlock if the 2 accounts try sending money for each other at the same time 2 accounts should be blocked
-//the one that get the lock the one with ascending order ID
-std::scoped_lock lock(src_it->second->mtx,dest_it->second->mtx); //the scoped lock ask for the 2 keys for source and destination
-//it uses deadlock avoidance alogirthm to grab them safely
-//if there is thread using one of the accounts we will wait
-//this ensure that in the execute transaction we can safely take 2 accounts perform operation and release them 
+	// check if the source balance has enough money for this transaction?
 
-//if the source account not active or the destination is closed
+	if (src_it->second->getBalance() < amount) {
+		TransactionRecord failed_record{
+		    // Constructing the record directly
+		    std::chrono::system_clock::now(),                   // timestamp
+		    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+		    src_id,                                             // src_id
+		    dest_id,                                            // dest_id
+		    amount,                                             // amount
+		    TransactionStatus::FAILED_INSUFFICIENT_FUNDS        // status};
+		};
+		writeRecord(failed_record);
+		return TransactionStatus::FAILED_INSUFFICIENT_FUNDS;
+	}
 
-if(src_it->second->getState()!=AccountState::ACTIVE||dest_it->second->getState()==AccountState::CLOSED){
-//create transaction status that 's invalid
-TransactionRecord failed_record{
-            // Constructing the record directly
-            std::chrono::system_clock::now(),                      // timestamp
-            next_tx_id.fetch_add(1, std::memory_order_relaxed),    // transactionId
-            src_id,                                                     // src_id
-            dest_id,                                            // dest_id
-            amount,                                                // amount
-            TransactionStatus::FAILED_INVALID_STATE                // status};
-};
-        writeRecord(failed_record);
-              return TransactionStatus::FAILED_INVALID_STATE;}
+	src_it->second->debit(amount);
+	dest_it->second->credit(amount);
 
-
-//check if the source balance has enough money for this transaction?
-
-if(src_it->second->getBalance()<amount){
-TransactionRecord failed_record{
-            // Constructing the record directly
-            std::chrono::system_clock::now(),                      // timestamp
-            next_tx_id.fetch_add(1, std::memory_order_relaxed),    // transactionId
-            src_id,                                                     // src_id
-            dest_id,                                            // dest_id
-            amount,                                                // amount
-            TransactionStatus::FAILED_INSUFFICIENT_FUNDS               // status};
-};
-        writeRecord(failed_record);
-              return TransactionStatus::FAILED_INSUFFICIENT_FUNDS;}
-
-
-     src_it->second->debit(amount);
-    dest_it->second->credit(amount);         
-
- TransactionRecord transaction_record {
-        std::chrono::system_clock::now(), // timestamp
-        next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
-        src_id, // src_id
-        dest_id, // dest_id
-        amount, // amount
-        TransactionStatus::SUCCESS, // status
-    };   
-    writeRecord(transaction_record);  
-    return TransactionStatus::SUCCESS;}
-
-
-AccountOperationStatus TransactionManager::executeFreezeAccount(uint64_t account_id){
-    auto acc_it = accounts_ref.find(account_id);
-    if(acc_it == accounts_ref.end()){
-        return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
-
-    std::scoped_lock lock(acc_it->second->mtx); 
-    if(acc_it->second->getState() == AccountState::CLOSED || acc_it->second->getState() == AccountState::PENDING){
-        return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
-       
-    if(acc_it->second->getState() == AccountState::ACTIVE){
-        AccountOperationStatus status = acc_it->second->freeze();
-        if(status == AccountOperationStatus::OK)
-        return AccountOperationStatus::OK;
-        else return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
-    
+	TransactionRecord transaction_record{
+	    std::chrono::system_clock::now(),                   // timestamp
+	    next_tx_id.fetch_add(1, std::memory_order_relaxed), // transactionId
+	    src_id,                                             // src_id
+	    dest_id,                                            // dest_id
+	    amount,                                             // amount
+	    TransactionStatus::SUCCESS,                         // status
+	};
+	writeRecord(transaction_record);
+	return TransactionStatus::SUCCESS;
 }
 
+AccountOperationStatus
+TransactionManager::executeFreezeAccount(uint64_t account_id) {
+	auto acc_it = accounts_ref.find(account_id);
+	if (acc_it == accounts_ref.end()) {
+		return AccountOperationStatus::FAILED_INVALID_STATE;
+	}
 
-//implement the unfreeze method
-AccountOperationStatus TransactionManager:: executeUnfreezeAccount(uint64_t account_id){
+	std::scoped_lock lock(acc_it->second->mtx);
+	if (acc_it->second->getState() == AccountState::CLOSED ||
+	    acc_it->second->getState() == AccountState::PENDING) {
+		return AccountOperationStatus::FAILED_INVALID_STATE;
+	}
 
-    auto id=accounts_ref.find(account_id);
-
-    if(id== accounts_ref.end()){
-        //the account doesn't exist
-        return AccountOperationStatus::FAILED_INVALID_STATE;//this account doesn't exist 
-    }
-    std::scoped_lock(id->second->mtx);//lock this account only 1 thread can use this critical section 
-    
-    if(id->second->state!=AccountState::FROZEN){
-        return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
-
-if(id->second->state==AccountState::FROZEN){
-   return  id->second->unfreeze();//let this account state change using the unfreeze method in account class
-
-}}
-
-
-AccountOperationStatus TransactionManager::executeCloseAccount(uint64_t account_id){
-    auto acc_it = accounts_ref.find(account_id);
-    if(acc_it == accounts_ref.end()){
-        return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
-
-    std::scoped_lock lock(acc_it->second->mtx); 
-    if(acc_it->second->getState() == AccountState::PENDING){
-        return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
-
-    if(acc_it->second->getState() == AccountState::ACTIVE || acc_it->second->getState() == AccountState::FROZEN){
-        if(acc_it->second->getBalance() != 0)
-        return AccountOperationStatus::FAILED_BALANCE_NOT_ZERO;
-
-        AccountOperationStatus status = acc_it->second->close();
-        return AccountOperationStatus::OK;
-    }
-
+	if (acc_it->second->getState() == AccountState::ACTIVE) {
+		AccountOperationStatus status = acc_it->second->freeze();
+		if (status == AccountOperationStatus::OK)
+			return AccountOperationStatus::OK;
+		else
+			return AccountOperationStatus::FAILED_INVALID_STATE;
+	}
 }
 
+// implement the unfreeze method
+AccountOperationStatus
+TransactionManager::executeUnfreezeAccount(uint64_t account_id) {
 
-//GET BALANCE
-int64_t TransactionManager:: executeGetBalance(uint64_t account_id){
-//check account exist or not ?
+	auto id = accounts_ref.find(account_id);
 
-    auto id=accounts_ref.find(account_id);
-    if(id==accounts_ref.end()) return 0;//nothing exist 
+	if (id == accounts_ref.end()) {
+		// the account doesn't exist
+		return AccountOperationStatus::FAILED_INVALID_STATE; // this account
+		                                                     // doesn't exist
+	}
+	std::scoped_lock(id->second->mtx); // lock this account only 1 thread can
+	                                   // use this critical section
 
-    //create mutex
-std::scoped_lock(id->second->mtx);
-if(id->second->state==AccountState::CLOSED){
+	if (id->second->state != AccountState::FROZEN) {
+		return AccountOperationStatus::FAILED_INVALID_STATE;
+	}
 
-    return -1;//the account is closed
+	if (id->second->state == AccountState::FROZEN) {
+		return id->second->unfreeze(); // let this account state change using
+		                               // the unfreeze method in account class
+	}
 }
 
+AccountOperationStatus
+TransactionManager::executeCloseAccount(uint64_t account_id) {
+	auto acc_it = accounts_ref.find(account_id);
+	if (acc_it == accounts_ref.end()) {
+		return AccountOperationStatus::FAILED_INVALID_STATE;
+	}
 
-return id->second->getBalance();}
+	std::scoped_lock lock(acc_it->second->mtx);
+	if (acc_it->second->getState() == AccountState::PENDING) {
+		return AccountOperationStatus::FAILED_INVALID_STATE;
+	}
 
-//INDEX BY DESTINATION
+	if (acc_it->second->getState() == AccountState::ACTIVE ||
+	    acc_it->second->getState() == AccountState::FROZEN) {
+		if (acc_it->second->getBalance() != 0)
+			return AccountOperationStatus::FAILED_BALANCE_NOT_ZERO;
 
-std::vector<TransactionRecord> TransactionManager::queryByDest(uint64_t account_id){
-    //joining 2 maps to get TransactionRecords from accountID
-
-    auto acc_it = accounts_ref.find(account_id);
-    if(acc_it == accounts_ref.end()){
-        return {};
-    }
-    
-    std::vector<TransactionRecord> tx_records;
-    auto double_it = index_by_dest.equal_range(account_id);
-    for (auto it =  double_it.first; it != double_it.second; it++)
-    {
-        tx_records.push_back(transactions[it->second]);
-    }
-    
-    return tx_records;
-
+		AccountOperationStatus status = acc_it->second->close();
+		return AccountOperationStatus::OK;
+	}
 }
 
+// GET BALANCE
+int64_t TransactionManager::executeGetBalance(uint64_t account_id) {
+	// check account exist or not ?
 
-//INDEX BY SOURCE
+	auto id = accounts_ref.find(account_id);
+	if (id == accounts_ref.end())
+		return 0; // nothing exist
 
- std::vector<TransactionRecord> TransactionManager:: queryBySrc(uint64_t account_id){
+	// create mutex
+	std::scoped_lock(id->second->mtx);
+	if (id->second->state == AccountState::CLOSED) {
 
-auto id= accounts_ref.find(account_id);
-if (id == accounts_ref.end()) return {};//nothing exist 
-//if account is closed
-if (id->second->state == AccountState::CLOSED)return{};
+		return -1; // the account is closed
+	}
 
-std ::vector<TransactionRecord>results;
-
-auto range=index_by_src.equal_range(account_id);//find the first and last iterator that consider only this account id
-//src id has account id [key] and transaction id[value]
-//we want to get the transactionRecord from this transaction id that exist transactions table
-
-for(auto i=range.first;i!=range.second;++i){
-
-    //keep moving on the account get each transaction id
-    uint64_t transact_id=i->second;
-
-    results.push_back(transactions[transact_id]);
-
+	return id->second->getBalance();
 }
-return results;}
 
-//INDEX BY TIME
-std::vector<TransactionRecord> TransactionManager::queryByTime(std::chrono::system_clock::time_point t1, std::chrono::system_clock::time_point t2){
+// INDEX BY DESTINATION
 
-    std::vector<TransactionRecord> tx_records;
-    auto start_it = index_by_time.lower_bound(t1);
-    auto end_it = index_by_time.lower_bound(t2);
+std::vector<TransactionRecord>
+TransactionManager::queryByDest(uint64_t account_id) {
+	// joining 2 maps to get TransactionRecords from accountID
 
-    for (auto it =  start_it; it != end_it; it++)
-    {
-        tx_records.push_back(transactions[it->second]);
-    }
-    
-    return tx_records;
+	auto acc_it = accounts_ref.find(account_id);
+	if (acc_it == accounts_ref.end()) {
+		return {};
+	}
+
+	std::vector<TransactionRecord> tx_records;
+	auto double_it = index_by_dest.equal_range(account_id);
+	for (auto it = double_it.first; it != double_it.second; it++) {
+		tx_records.push_back(transactions[it->second]);
+	}
+
+	return tx_records;
+}
+
+// INDEX BY SOURCE
+
+std::vector<TransactionRecord>
+TransactionManager::queryBySrc(uint64_t account_id) {
+
+	auto id = accounts_ref.find(account_id);
+	if (id == accounts_ref.end())
+		return {}; // nothing exist
+	// if account is closed
+	if (id->second->state == AccountState::CLOSED)
+		return {};
+
+	std ::vector<TransactionRecord> results;
+
+	auto range = index_by_src.equal_range(
+	    account_id); // find the first and last iterator that consider only this
+	                 // account id
+	// src id has account id [key] and transaction id[value]
+	// we want to get the transactionRecord from this transaction id that exist
+	// transactions table
+
+	for (auto i = range.first; i != range.second; ++i) {
+
+		// keep moving on the account get each transaction id
+		uint64_t transact_id = i->second;
+
+		results.push_back(transactions[transact_id]);
+	}
+	return results;
+}
+
+// INDEX BY TIME
+std::vector<TransactionRecord>
+TransactionManager::queryByTime(std::chrono::system_clock::time_point t1,
+                                std::chrono::system_clock::time_point t2) {
+
+	std::vector<TransactionRecord> tx_records;
+	auto start_it = index_by_time.lower_bound(t1);
+	auto end_it = index_by_time.lower_bound(t2);
+
+	for (auto it = start_it; it != end_it; it++) {
+		tx_records.push_back(transactions[it->second]);
+	}
+
+	return tx_records;
+}
+
+void TransactionManager::writeRecord(const TransactionRecord &record) {
+	// TO DO
 }
