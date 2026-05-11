@@ -206,12 +206,6 @@ TransactionRecord failed_record{
     return TransactionStatus::SUCCESS;}
 
 
-
-
-
-
-
-
 AccountOperationStatus TransactionManager::executeFreezeAccount(uint64_t account_id){
     auto acc_it = accounts_ref.find(account_id);
     if(acc_it == accounts_ref.end()){
@@ -231,6 +225,27 @@ AccountOperationStatus TransactionManager::executeFreezeAccount(uint64_t account
     }
     
 }
+
+
+//implement the unfreeze method
+AccountOperationStatus TransactionManager:: executeUnfreezeAccount(uint64_t account_id){
+
+    auto id=accounts_ref.find(account_id);
+
+    if(id== accounts_ref.end()){
+        //the account doesn't exist
+        return AccountOperationStatus::FAILED_INVALID_STATE;//this account doesn't exist 
+    }
+    std::scoped_lock(id->second->mtx);//lock this account only 1 thread can use this critical section 
+    
+    if(id->second->state!=AccountState::FROZEN){
+        return AccountOperationStatus::FAILED_INVALID_STATE;
+    }
+
+if(id->second->state==AccountState::FROZEN){
+   return  id->second->unfreeze();//let this account state change using the unfreeze method in account class
+
+}}
 
 
 AccountOperationStatus TransactionManager::executeCloseAccount(uint64_t account_id){
@@ -255,6 +270,25 @@ AccountOperationStatus TransactionManager::executeCloseAccount(uint64_t account_
 }
 
 
+//GET BALANCE
+int64_t TransactionManager:: executeGetBalance(uint64_t account_id){
+//check account exist or not ?
+
+    auto id=accounts_ref.find(account_id);
+    if(id==accounts_ref.end()) return ;//nothing exist 
+
+    //create mutex
+std::scoped_lock(id->second->mtx);
+if(id->second->state==AccountState::CLOSED){
+
+    return -1;//the account is closed
+}
+
+
+return id->second->getBalance();}
+
+//INDEX BY DESTINATION
+
 std::vector<TransactionRecord> TransactionManager::queryByDest(uint64_t account_id){
     //joining 2 maps to get TransactionRecords from accountID
 
@@ -275,8 +309,32 @@ std::vector<TransactionRecord> TransactionManager::queryByDest(uint64_t account_
 }
 
 
+//INDEX BY SOURCE
 
+ std::vector<TransactionRecord> TransactionManager:: queryBySrc(uint64_t account_id){
 
+auto id= accounts_ref.find(account_id);
+if(id==accounts_ref.end()) return ;//nothing exist 
+//if account is closed
+if(id->second->state==AccountState::CLOSED)return;
+
+std ::vector<TransactionRecord>results;
+
+auto range=index_by_src.equal_range(account_id);//find the first and last iterator that consider only this account id
+//src id has account id [key] and transaction id[value]
+//we want to get the transactionRecord from this transaction id that exist transactions table
+
+for(auto i=range.first;i!=range.second;++i){
+
+    //keep moving on the account get each transaction id
+    uint64_t transact_id=i->second;
+
+    results.push_back(transactions[transact_id]);
+
+}
+return results;}
+
+//INDEX BY TIME
 std::vector<TransactionRecord> TransactionManager::queryByTime(std::chrono::system_clock::time_point t1, std::chrono::system_clock::time_point t2){
 
     std::vector<TransactionRecord> tx_records;
