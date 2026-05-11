@@ -4,6 +4,7 @@
 #include "TransactionManager.h"
 #include "types.h"
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -18,6 +19,8 @@ class Bank {
 	Bank();
 
 	uint64_t openAccount(uint64_t customer_id);
+
+	uint64_t registerCustomer(const std::string &name, uint64_t nationalID);
 
 	AccountOperationStatus closeAccount(uint64_t account_id);
 
@@ -37,6 +40,8 @@ class Bank {
 	std::vector<TransactionRecord> queryBySrc(uint64_t account_id);
 
 	std::vector<TransactionRecord> queryByDest(uint64_t account_id);
+
+	std::vector<TransactionRecord> queryByAccount(uint64_t account_id);
 
 	std::vector<TransactionRecord>
 	queryByTime(std::chrono::system_clock::time_point t1,
