@@ -275,7 +275,7 @@ int64_t TransactionManager:: executeGetBalance(uint64_t account_id){
 //check account exist or not ?
 
     auto id=accounts_ref.find(account_id);
-    if(id==accounts_ref.end()) return ;//nothing exist 
+    if(id==accounts_ref.end()) return 0;//nothing exist 
 
     //create mutex
 std::scoped_lock(id->second->mtx);
@@ -294,7 +294,7 @@ std::vector<TransactionRecord> TransactionManager::queryByDest(uint64_t account_
 
     auto acc_it = accounts_ref.find(account_id);
     if(acc_it == accounts_ref.end()){
-        return;
+        return {};
     }
     
     std::vector<TransactionRecord> tx_records;
@@ -314,9 +314,9 @@ std::vector<TransactionRecord> TransactionManager::queryByDest(uint64_t account_
  std::vector<TransactionRecord> TransactionManager:: queryBySrc(uint64_t account_id){
 
 auto id= accounts_ref.find(account_id);
-if(id==accounts_ref.end()) return ;//nothing exist 
+if (id == accounts_ref.end()) return {};//nothing exist 
 //if account is closed
-if(id->second->state==AccountState::CLOSED)return;
+if (id->second->state == AccountState::CLOSED)return{};
 
 std ::vector<TransactionRecord>results;
 

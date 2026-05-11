@@ -1,5 +1,7 @@
 #include "Bank.h"
 
+Bank::Bank() : tx_manager(accounts), next_id(1000) {}          // Start account IDs at 1000 (or 1)
+
 AccountOperationStatus Bank::openAccount(uint64_t account_id){
     //lock incrementing id_s
     next_id.fetch_add(1,std::memory_order_relaxed);
