@@ -237,6 +237,7 @@ TransactionManager::executeFreezeAccount(uint64_t account_id) {
 		else
 			return AccountOperationStatus::FAILED_INVALID_STATE;
 	}
+	return AccountOperationStatus::FAILED_INVALID_STATE;
 }
 
 // implement the unfreeze method
@@ -250,8 +251,8 @@ TransactionManager::executeUnfreezeAccount(uint64_t account_id) {
 		return AccountOperationStatus::FAILED_INVALID_STATE; // this account
 		                                                     // doesn't exist
 	}
-	std::scoped_lock(id->second->mtx); // lock this account only 1 thread can
-	                                   // use this critical section
+	std::scoped_lock lock(id->second->mtx); // lock this account only 1 thread
+	                                        // can use this critical section
 
 	if (id->second->state != AccountState::FROZEN) {
 		return AccountOperationStatus::FAILED_INVALID_STATE;
@@ -261,6 +262,7 @@ TransactionManager::executeUnfreezeAccount(uint64_t account_id) {
 		return id->second->unfreeze(); // let this account state change using
 		                               // the unfreeze method in account class
 	}
+	return AccountOperationStatus::FAILED_INVALID_STATE;
 }
 
 AccountOperationStatus
@@ -283,6 +285,7 @@ TransactionManager::executeCloseAccount(uint64_t account_id) {
 		AccountOperationStatus status = acc_it->second->close();
 		return AccountOperationStatus::OK;
 	}
+	return AccountOperationStatus::FAILED_INVALID_STATE;
 }
 
 // GET BALANCE
@@ -294,7 +297,7 @@ int64_t TransactionManager::executeGetBalance(uint64_t account_id) {
 		return 0; // nothing exist
 
 	// create mutex
-	std::scoped_lock(id->second->mtx);
+	std::scoped_lock lock(id->second->mtx);
 	if (id->second->state == AccountState::CLOSED) {
 
 		return -1; // the account is closed
@@ -308,16 +311,16 @@ int64_t TransactionManager::executeGetBalance(uint64_t account_id) {
 std::vector<TransactionRecord>
 TransactionManager::queryByDest(uint64_t account_id) {
 	// joining 2 maps to get TransactionRecords from accountID
-
 	auto acc_it = accounts_ref.find(account_id);
 	if (acc_it == accounts_ref.end()) {
 		return {};
 	}
+	std::shared_lock<std::shared_mutex> lock(record_mtx);
 
 	std::vector<TransactionRecord> tx_records;
 	auto double_it = index_by_dest.equal_range(account_id);
 	for (auto it = double_it.first; it != double_it.second; it++) {
-		tx_records.push_back(transactions[it->second]);
+		tx_records.push_back(transactions.at(it->second));
 	}
 
 	return tx_records;
@@ -327,7 +330,6 @@ TransactionManager::queryByDest(uint64_t account_id) {
 
 std::vector<TransactionRecord>
 TransactionManager::queryBySrc(uint64_t account_id) {
-
 	auto id = accounts_ref.find(account_id);
 	if (id == accounts_ref.end())
 		return {}; // nothing exist
@@ -335,6 +337,7 @@ TransactionManager::queryBySrc(uint64_t account_id) {
 	if (id->second->state == AccountState::CLOSED)
 		return {};
 
+	std::shared_lock<std::shared_mutex> lock(record_mtx);
 	std ::vector<TransactionRecord> results;
 
 	auto range = index_by_src.equal_range(
@@ -344,12 +347,12 @@ TransactionManager::queryBySrc(uint64_t account_id) {
 	// we want to get the transactionRecord from this transaction id that exist
 	// transactions table
 
-	for (auto i = range.first; i != range.second; ++i) {
+	for (auto it = range.first; it != range.second; ++it) {
 
 		// keep moving on the account get each transaction id
-		uint64_t transact_id = i->second;
+		uint64_t transact_id = it->second;
 
-		results.push_back(transactions[transact_id]);
+		results.push_back(transactions.at(it->second));
 	}
 	return results;
 }
@@ -358,18 +361,63 @@ TransactionManager::queryBySrc(uint64_t account_id) {
 std::vector<TransactionRecord>
 TransactionManager::queryByTime(std::chrono::system_clock::time_point t1,
                                 std::chrono::system_clock::time_point t2) {
-
+	std::shared_lock<std::shared_mutex> lock(record_mtx);
 	std::vector<TransactionRecord> tx_records;
 	auto start_it = index_by_time.lower_bound(t1);
-	auto end_it = index_by_time.lower_bound(t2);
+	auto end_it = index_by_time.upper_bound(
+	    t2); // changed to upper bound to get an inclusive range.
 
 	for (auto it = start_it; it != end_it; it++) {
-		tx_records.push_back(transactions[it->second]);
+		tx_records.push_back(transactions.at(
+		    it->second)); // changed the use of [] to .at, because [] is
+		                  // mutating, and the shared lock is a read only lock.
 	}
 
 	return tx_records;
 }
 
 void TransactionManager::writeRecord(const TransactionRecord &record) {
-	// TO DO
+	std::scoped_lock<std::shared_mutex> lock(record_mtx);
+
+	transactions[record.transactionId] = record;
+
+	index_by_time.emplace(record.timestamp, record.transactionId);
+
+	if (record.src_id != 0) {
+		index_by_src.emplace(record.src_id, record.transactionId);
+	}
+	if (record.dest_id != 0) {
+		index_by_dest.emplace(record.dest_id, record.transactionId);
+	}
+}
+
+std::vector<TransactionRecord>
+TransactionManager::queryByAccount(uint64_t account_id) {
+	std::shared_lock<std::shared_mutex> lock(record_mtx);
+
+	std::unordered_set<uint64_t> unique_tx_ids;
+
+	auto src_range = index_by_src.equal_range(account_id);
+	for (auto it = src_range.first; it != src_range.second; ++it) {
+		unique_tx_ids.insert(it->second);
+	}
+
+	auto dest_range = index_by_dest.equal_range(account_id);
+	for (auto it = dest_range.first; it != dest_range.second; ++it) {
+		unique_tx_ids.insert(it->second);
+	}
+
+	std::vector<TransactionRecord> result;
+	result.reserve(unique_tx_ids.size()); // Pre-allocate memory
+	for (uint64_t tx_id : unique_tx_ids) {
+		result.push_back(transactions.at(tx_id));
+	}
+
+	// 6. Sort
+	std::sort(result.begin(), result.end(),
+	          [](const TransactionRecord &a, const TransactionRecord &b) {
+		          return a.timestamp < b.timestamp;
+	          });
+
+	return result;
 }

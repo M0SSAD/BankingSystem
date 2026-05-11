@@ -1,11 +1,14 @@
 #include "Bank.h"
 
-// TO DO THE CONSTRUCTOR
-// Bank::Bank()
-//     : tx_manager(accounts), next_id(1000) {} // Start account IDs at 1000 (or
-//     1)
+Bank::Bank() {
+	// To DO
+}
 
-AccountOperationStatus Bank::openAccount(uint64_t account_id) {
+uint64_t Bank::openAccount(uint64_t account_id) {
+	// TO DO
+}
+
+uint64_t Bank::registerCustomer(const std::string &name, uint64_t nationalID) {
 	// TO DO
 }
 
@@ -21,16 +24,16 @@ AccountOperationStatus Bank::unfreezeAccount(uint64_t account_id) {
 	return tx_manager.executeCloseAccount(account_id);
 }
 
-TransactionStatus Bank::deposit(uint64_t account_id, uint64_t amount) {
+TransactionStatus Bank::deposit(uint64_t account_id, int64_t amount) {
 	return tx_manager.executeDeposit(account_id, amount);
 }
 
-TransactionStatus Bank::withdraw(uint64_t account_id, uint64_t amount) {
+TransactionStatus Bank::withdraw(uint64_t account_id, int64_t amount) {
 	return tx_manager.executeWithdraw(account_id, amount);
 }
 
 TransactionStatus Bank::transfer(uint64_t account_id1, uint64_t account_id2,
-                                 uint64_t amount) {
+                                 int64_t amount) {
 	return tx_manager.executeTransfer(account_id1, account_id2, amount);
 }
 
@@ -50,4 +53,8 @@ std::vector<TransactionRecord> Bank::queryBySrc(uint64_t account_id) {
 
 std::vector<TransactionRecord> Bank::queryByDest(uint64_t account_id) {
 	return tx_manager.queryByDest(account_id);
+}
+
+std::vector<TransactionRecord> Bank::queryByAccount(uint64_t account_id) {
+	// To Do
 }

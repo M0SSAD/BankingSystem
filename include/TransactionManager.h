@@ -2,12 +2,15 @@
 
 #include "Account.h"
 #include "types.h"
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class TransactionManager {
@@ -25,6 +28,8 @@ class TransactionManager {
 	    index_by_dest; // to store the transaction Id based on the destId.
 	std::multimap<std::chrono::system_clock::time_point, uint64_t>
 	    index_by_time; // sorts the transactions based on their time stamp.
+	std::shared_mutex record_mtx; // Mutex to use while writing records, so only
+	                              // one thread can store the record at a time.
 	std::atomic<uint64_t> next_tx_id{1};
 
 	void writeRecord(const TransactionRecord &record);
@@ -50,4 +55,5 @@ class TransactionManager {
 	            std::chrono::system_clock::time_point t2);
 	std::vector<TransactionRecord> queryBySrc(uint64_t account_id);
 	std::vector<TransactionRecord> queryByDest(uint64_t account_id);
+	std::vector<TransactionRecord> queryByAccount(uint64_t account_id);
 };
