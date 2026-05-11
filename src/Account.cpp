@@ -13,10 +13,7 @@ Account::Account(uint64_t account_id, uint64_t customer_id)
 
 bool Account::debit(int64_t amount)
 {
-    //withdraw only form active account
-    if (state != AccountState::ACTIVE)
-        return false;
-
+    
     if (amount <= 0)
         return false;
 
@@ -28,26 +25,8 @@ bool Account::debit(int64_t amount)
     return true;
 }
 
-bool Account::credit(int64_t amount)
+bool Account::credit(uint64_t amount)
 {
-    //deposit in all cases except closed
-    if (state == AccountState::CLOSED)
-        return false;
-
-    if (amount <= 0)
-        return false;
-
-    if (state == AccountState::PENDING)
-    {
-        if (amount < MINIMUM_PENDING_DEPOSIT)
-            return false;
-
-        balance += amount;
-        state = AccountState::ACTIVE;
-
-        return true;
-    }
-
     balance += amount;
 
     return true;
@@ -55,11 +34,6 @@ bool Account::credit(int64_t amount)
 
 AccountOperationStatus Account::freeze()
 {
-    //freeze only active accounts
-    if (state != AccountState::ACTIVE)
-    {
-        return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
 
     state = AccountState::FROZEN;
 
@@ -68,10 +42,6 @@ AccountOperationStatus Account::freeze()
 
 AccountOperationStatus Account::unfreeze()
 {
-    if (state != AccountState::FROZEN)
-    {
-        return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
 
     state = AccountState::ACTIVE;
 
@@ -80,16 +50,6 @@ AccountOperationStatus Account::unfreeze()
 
 AccountOperationStatus Account::close()
 {
-    if (state != AccountState::ACTIVE &&
-        state != AccountState::FROZEN)
-    {
-        return AccountOperationStatus::FAILED_INVALID_STATE;
-    }
-
-    if (balance != 0)
-    {
-        return AccountOperationStatus::FAILED_BALANCE_NOT_ZERO;
-    }
 
     state = AccountState::CLOSED;
 
