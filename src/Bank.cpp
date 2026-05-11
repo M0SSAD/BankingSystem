@@ -1,15 +1,40 @@
 #include "Bank.h"
 
-Bank::Bank() {
-	// To DO
-}
+Bank::Bank() : tx_manager(accounts) {}
 
-uint64_t Bank::openAccount(uint64_t account_id) {
-	// TO DO
+uint64_t Bank::openAccount(uint64_t customerId) {
+	// acquire the lock
+	std::scoped_lock lock(bank_mtx);
+	// check that the customer exists
+	auto it = customers.find(customerId);
+	if (it == customers.end()) {
+		return 0;
+	}
+	// generate a new_id
+	uint64_t new_id = next_account_id.fetch_add(1, std::memory_order_relaxed);
+	// make an account and take a unique pointer to it
+	auto account = std::make_unique<Account>(new_id, customerId);
+	// add the account Id to the customer.
+	bool success = it->second->addAccountID(new_id);
+	accounts[new_id] = std::move(account);
+	return new_id;
 }
 
 uint64_t Bank::registerCustomer(const std::string &name, uint64_t nationalID) {
-	// TO DO
+	std::scoped_lock lock(bank_mtx);
+	// make sure that the nationalId is unique.
+	auto it = national_id_to_customer.find(nationalID);
+	if (it != national_id_to_customer.end()) {
+		return it->second; // if they exit return their ID.
+	}
+	// generate the Id
+	uint64_t new_id = next_customer_id.fetch_add(1, std::memory_order_relaxed);
+	// make the customer object and take a unique ptr to it
+	auto customer = std::make_unique<Customer>(name, nationalID);
+	// save the data
+	national_id_to_customer.insert({nationalID, new_id});
+	customers[new_id] = std::move(customer);
+	return new_id;
 }
 
 AccountOperationStatus Bank::closeAccount(uint64_t account_id) {
@@ -21,7 +46,7 @@ AccountOperationStatus Bank::freezeAccount(uint64_t account_id) {
 }
 
 AccountOperationStatus Bank::unfreezeAccount(uint64_t account_id) {
-	return tx_manager.executeCloseAccount(account_id);
+	return tx_manager.executeUnfreezeAccount(account_id);
 }
 
 TransactionStatus Bank::deposit(uint64_t account_id, int64_t amount) {
@@ -56,5 +81,5 @@ std::vector<TransactionRecord> Bank::queryByDest(uint64_t account_id) {
 }
 
 std::vector<TransactionRecord> Bank::queryByAccount(uint64_t account_id) {
-	// To Do
+	return tx_manager.queryByAccount(account_id);
 }

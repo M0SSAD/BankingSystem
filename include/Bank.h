@@ -12,8 +12,14 @@ class Bank {
   private:
 	TransactionManager tx_manager;
 	std::unordered_map<uint64_t, std::unique_ptr<Account>> accounts;
-
+	std::unordered_map<uint64_t, std::unique_ptr<Customer>> customers;
+	std::unordered_map<uint64_t, uint64_t>
+	    national_id_to_customer; // Mapping National IDs to customer objects for
+	                             // O(1) Look ups.
+	std::shared_mutex bank_mtx;  // To use while adding users/accounts
 	std::atomic<uint64_t> next_id{1};
+	std::atomic<uint64_t> next_account_id{1};
+	std::atomic<uint64_t> next_customer_id{1};
 
   public:
 	Bank();
