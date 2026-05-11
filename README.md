@@ -1,4 +1,4 @@
-# Concurrent Banking System
+# Banking System
 
 A banking system built with C++.
 This project implements strict concurrency controls, per-account locking, and a centralized transaction control to guarantee processing without data corruption.
