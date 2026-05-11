@@ -1,25 +1,25 @@
+#include "Customer.h"
+#include <cstdint>
 #include <iostream>
-#include<string>
-#include  <cstdint>
-#include<vector>
-#include "customer.h"
+#include <string>
+#include <vector>
 
-customer::customer(std::string Name, uint64_t id) : name(Name), national_id(id) {}
+customer::customer(std::string Name, uint64_t id)
+    : name(Name), national_id(id) {}
 
 // Modification functions (Setters)
-bool customer::setName(const std::string& newName) {
+bool customer::setName(const std::string &newName) {
 	if (!newName.empty()) {
 		name = newName;
 		return true;
-	}
-	else {
+	} else {
 		return false;
 	}
 }
 
 bool customer::addAccountID(uint64_t id) {
-	//check if that id already exist
-	for (const auto& existing_id : account_id) {
+	// check if that id already exist
+	for (const auto &existing_id : account_id) {
 		if (existing_id == id) {
 			return false;
 		}
@@ -29,21 +29,13 @@ bool customer::addAccountID(uint64_t id) {
 }
 bool customer::removeAccount(uint64_t id) {
 	for (auto it = account_id.begin(); it != account_id.end(); ++it) {
-		if (*it == id)
-		{
+		if (*it == id) {
 			account_id.erase(it);
 			return true;
 		}
 	}
 	return false; // Not found
 }
-std::vector<uint64_t>customer::getAccountIDs() const {
-	return account_id;
-}
-std::string customer::getName() const {
-	return name;
-}
-uint64_t customer::getNationalID() const {
-	return national_id;
-}
-
+std::vector<uint64_t> customer::getAccountIDs() const { return account_id; }
+std::string customer::getName() const { return name; }
+uint64_t customer::getNationalID() const { return national_id; }
