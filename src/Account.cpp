@@ -21,6 +21,9 @@ bool Account::debit(int64_t amount) {
 }
 
 bool Account::credit(int64_t amount) {
+	if (amount <= 0)
+		return false;
+
 	balance += amount;
 
 	return true;

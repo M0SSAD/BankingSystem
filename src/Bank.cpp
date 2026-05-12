@@ -1,6 +1,27 @@
 #include "Bank.h"
 
-Bank::Bank() : tx_manager(accounts) {}
+#include <algorithm>
+#include <cctype>
+
+Bank::Bank() : tx_manager(accounts, bank_mtx) {}
+
+std::string Bank::toLowerCopy(const std::string &input) {
+	std::string out;
+	out.reserve(input.size());
+	for (unsigned char c : input) {
+		out.push_back(static_cast<char>(std::tolower(c)));
+	}
+	return out;
+}
+
+void Bank::ensureNameIndexSorted() {
+	if (name_index_sorted) {
+		return;
+	}
+	std::sort(name_index.begin(), name_index.end(),
+	          [](const auto &a, const auto &b) { return a.first < b.first; });
+	name_index_sorted = true;
+}
 
 uint64_t Bank::openAccount(uint64_t customerId) {
 	// acquire the lock
@@ -34,6 +55,8 @@ uint64_t Bank::registerCustomer(const std::string &name, uint64_t nationalID) {
 	// save the data
 	national_id_to_customer.insert({nationalID, new_id});
 	customers[new_id] = std::move(customer);
+	name_index.emplace_back(toLowerCopy(name), new_id);
+	name_index_sorted = false;
 	return new_id;
 }
 
@@ -66,6 +89,14 @@ int64_t Bank::getBalance(uint64_t account_id) {
 	return tx_manager.executeGetBalance(account_id);
 }
 
+std::optional<AccountState> Bank::getAccountState(uint64_t account_id) {
+	return tx_manager.executeGetAccountState(account_id);
+}
+
+std::optional<uint64_t> Bank::getAccountCustomerId(uint64_t account_id) {
+	return tx_manager.executeGetAccountCustomerId(account_id);
+}
+
 std::vector<TransactionRecord>
 Bank::queryByTime(std::chrono::system_clock::time_point t1,
                   std::chrono::system_clock::time_point t2) {
@@ -82,4 +113,92 @@ std::vector<TransactionRecord> Bank::queryByDest(uint64_t account_id) {
 
 std::vector<TransactionRecord> Bank::queryByAccount(uint64_t account_id) {
 	return tx_manager.queryByAccount(account_id);
+}
+
+std::vector<uint64_t> Bank::searchCustomerPrefix(const std::string &prefix) {
+	std::scoped_lock lock(bank_mtx);
+	ensureNameIndexSorted();
+
+	std::vector<uint64_t> results;
+	if (prefix.empty() || name_index.empty()) {
+		return results;
+	}
+	const std::string lower_prefix = toLowerCopy(prefix);
+	const std::string upper_prefix = lower_prefix + char(0x7F);
+
+	auto lower = std::lower_bound(
+	    name_index.begin(), name_index.end(), lower_prefix,
+	    [](const auto &entry, const std::string &value) {
+		    return entry.first < value;
+	    });
+	auto upper = std::upper_bound(
+	    name_index.begin(), name_index.end(), upper_prefix,
+	    [](const std::string &value, const auto &entry) {
+		    return value < entry.first;
+	    });
+
+	for (auto it = lower; it != upper; ++it) {
+		results.push_back(it->second);
+	}
+	return results;
+}
+
+std::vector<size_t>
+Bank::countTransactionsPerWindow(std::chrono::seconds window,
+	                               std::chrono::seconds step) {
+	return tx_manager.countTransactionsPerWindow(window, step);
+}
+
+std::vector<TransactionRecord> Bank::getRecentTransactions(size_t limit) {
+	return tx_manager.getRecentTransactions(limit);
+}
+
+std::optional<uint64_t>
+Bank::lookupCustomerByNationalID(uint64_t national_id) const {
+	std::shared_lock lock(bank_mtx);
+	auto it = national_id_to_customer.find(national_id);
+	if (it != national_id_to_customer.end()) {
+		return it->second;
+	}
+	return std::nullopt;
+}
+
+std::optional<std::pair<std::string, uint64_t>>
+Bank::getCustomerInfo(uint64_t customer_id) const {
+	std::shared_lock lock(bank_mtx);
+	auto it = customers.find(customer_id);
+	if (it != customers.end()) {
+		return std::make_pair(it->second->getName(),
+		                      it->second->getNationalID());
+	}
+	return std::nullopt;
+}
+
+std::vector<uint64_t> Bank::getCustomerAccountIDs(uint64_t customer_id) const {
+	std::shared_lock lock(bank_mtx);
+	auto it = customers.find(customer_id);
+	if (it != customers.end()) {
+		return it->second->getAccountIDs();
+	}
+	return {};
+}
+
+std::vector<uint64_t> Bank::getAllAccountIDs() const {
+	std::shared_lock lock(bank_mtx);
+	std::vector<uint64_t> ids;
+	ids.reserve(accounts.size());
+	for (const auto &[id, _] : accounts) {
+		ids.push_back(id);
+	}
+	return ids;
+}
+
+std::vector<uint64_t> Bank::getAllCustomerIDs() const {
+	std::shared_lock lock(bank_mtx);
+	std::vector<uint64_t> ids;
+	ids.reserve(customers.size());
+	for (const auto &[id, _] : customers) {
+		ids.push_back(id);
+	}
+	return ids;
 }
