@@ -14,6 +14,7 @@ classDiagram
     class Bank {
         -TransactionManager tx_manager
         -unordered_map~uint64_t, unique_ptr~Account~~ accounts
+        -vector~pair~string, uint64_t~~ name_index
         +openAccount(customer_id uint64_t) Status
         +closeAccount(account_id uint64_t) Status
         +freezeAccount(account_id uint64_t) Status
@@ -24,15 +25,21 @@ classDiagram
         +getBalance(account_id uint64_t) int64_t
         +queryBySrc(account_id uint64_t) vector~TransactionRecord~
         +queryByDest(account_id uint64_t) vector~TransactionRecord~
+        +queryByAccount(account_id uint64_t) vector~TransactionRecord~
+        +searchCustomerPrefix(prefix string) vector~uint64_t~
+        +countTransactionsPerWindow(window seconds, step seconds) vector~size_t~
+        +getRecentTransactions(limit size_t) vector~TransactionRecord~
     }
 
     class TransactionManager {
         -unordered_map~uint64_t, unique_ptr~Account~~& accounts_ref
+        -shared_mutex& bank_mtx
         -map~time_point, TransactionRecord~ index_by_time
-        -unordered_multimap~uint64_t, TransactionRecord~ index_by_src
-        -unordered_multimap~uint64_t, TransactionRecord~ index_by_dest
-        -unordered_map~uint64_t, unique_ptr~mutex~~ account_locks
+        -unordered_map~uint64_t, vector~uint64_t~~ history_by_src
+        -unordered_map~uint64_t, vector~uint64_t~~ history_by_dest
         -atomic~uint64_t~ next_tx_id
+        -deque~TransactionRecord~ recent_feed
+        -size_t recent_capacity
         +executeDeposit(account_id uint64_t, amount int64_t) TransactionStatus
         +executeWithdraw(account_id uint64_t, amount int64_t) TransactionStatus
         +executeTransfer(src_id uint64_t, dest_id uint64_t, amount int64_t) TransactionStatus
@@ -43,8 +50,10 @@ classDiagram
         +queryByTime(t1 time_point, t2 time_point) vector~TransactionRecord~
         +queryBySrc(account_id uint64_t) vector~TransactionRecord~
         +queryByDest(account_id uint64_t) vector~TransactionRecord~
+        +queryByAccount(account_id uint64_t) vector~TransactionRecord~
+        +countTransactionsPerWindow(window seconds, step seconds) vector~size_t~
+        +getRecentTransactions(limit size_t) vector~TransactionRecord~
         -writeRecord(record TransactionRecord) void
-        -acquireLocks(id1 uint64_t, id2 uint64_t) void
     }
 
     class Account {
@@ -101,6 +110,11 @@ classDiagram
         FAILED_ACCOUNT_NOT_FOUND
         FAILED_ACCOUNT_FROZEN
         FAILED_INVALID_STATE
+        FAILED_INVALID_AMOUNT
+        FAILED_ACCOUNT_PENDING
+        FAILED_ACCOUNT_CLOSED
+        FAILED_ACCOUNT_NOT_ACTIVE
+        FAILED_SAME_ACCOUNT
     }
 
     class AccountOperationStatus {
@@ -108,6 +122,11 @@ classDiagram
         OK
         FAILED_INVALID_STATE
         FAILED_BALANCE_NOT_ZERO
+        FAILED_ACCOUNT_PENDING
+        FAILED_ACCOUNT_NOT_FOUND
+        FAILED_ALREADY_FROZEN
+        FAILED_ALREADY_ACTIVE
+        FAILED_ALREADY_CLOSED
     }
 
     Bank *-- TransactionManager : owns
@@ -164,7 +183,7 @@ flowchart TD
 
 1. **Deadlock Prevention (Lock Ordering):** In any multi-account operation, mutexes are **always** acquired in ascending `uint64_t` Account ID order. No exceptions.
 2. **Atomic Validation:** Validation always occurs *inside* the lock scope, never before acquiring the lock.
-3. **Single Source of Truth:** `TransactionHistory` is an internal container inside `TransactionManager`, not a separate entity.
+3. **Single Source of Truth:** `TransactionHistory` is an internal container inside `TransactionManager`, not a separate entity and remains available after account closure.
 4. **Separation of Concerns:** `Bank` performs zero business logic. It routes and owns. Only `TransactionManager` mutates `Account` state.
 5. **Memory Safety:** `Customer` objects hold Account IDs only. No raw pointers or smart pointers to `Account` objects.
 6. **Audit Integrity:** Failed transactions produce exactly one `FAILED_*` `TransactionRecord`. No partial records. No silent failures.
