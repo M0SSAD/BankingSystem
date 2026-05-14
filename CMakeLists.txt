@@ -10,7 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 # Disable compiler-specific extensions (e.g., GNU extensions) to ensure standard compliance
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Add the include directory so files in src/ can use #include "Account.h" cleanly
+
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
 # Core backend sources

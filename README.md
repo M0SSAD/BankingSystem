@@ -226,7 +226,7 @@ This flowchart shows exactly what happens step-by-step when someone transfers mo
 ```mermaid
 flowchart TD
     A[1. Request arrives at Bank\nPure router] --> B[2. Bank passes it to TxManager\nSends IDs + amount]
-    B --> C[3. Lock the accounts\nAlways lock the smaller ID first]
+    B --> C[3. Lock the accounts\n]
     C --> D[4. Check the rules\nIs account ACTIVE? Is balance enough?]
     D --> E{Valid?}
     E -- NO --> F[Unlock accounts\nSave a FAILED record]
@@ -298,7 +298,7 @@ cd BankingSystem
 cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
 
 # Compile
-cmake --build build -j$(nproc)
+cmake --build build -j
 
 # Run the application
 ./build/BankingSystemQt
