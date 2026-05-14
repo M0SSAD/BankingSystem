@@ -242,7 +242,7 @@ flowchart TD
 1. **Single Source of Truth:** All transaction history lives inside `TransactionManager`. Even if an account is closed, the history is not lost.
 2. **Bank Does No Math:** The `Bank` class only stores data and routes calls. It never touches balances or decides if a transfer is valid.
 3. **No Silent Failures:** Every operation — even failed ones — produces a `TransactionRecord`. If a transfer fails because of insufficient funds, that failure is still logged.
-4. **Lock Ordering for Safety:** When a transfer touches two accounts, we always lock the one with the smaller ID first. This is a simple rule that prevents the system from ever freezing.
+4. **Lock Ordering for Safety:** When a transfer touches two accounts, the scoped_lock uses a deadlock avoidance algorithm to ensure safety.
 5. **Memory Safety Through IDs:** `Customer` objects store account IDs (numbers), not pointers to account objects. This avoids dangling references if an account is removed.
 
 ---
